@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Task Manager</title>
+<style>
+:root{
+  --bg:#eef2f6; --card:#ffffff; --ink:#14213d; --muted:#5b6b82; --line:#d9e1ea;
+  --accent:#3b5bdb; --accent-ink:#ffffff;
+  --high:#d6336c; --medium:#f08c00; --low:#2f9e44; --over:#c92a2a;
+}
+@media (prefers-color-scheme:dark){
+  :root{--bg:#0f1624; --card:#18223a; --ink:#e8eefc; --muted:#98a6c3; --line:#2a3757;
+        --accent:#7c97ff; --accent-ink:#0f1624;}
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;line-height:1.45}
+main{max-width:640px;margin:0 auto;padding:24px 16px 48px}
+h1{font-size:1.7rem;margin:0 0 4px}
+.sub{color:var(--muted);margin:0 0 20px}
+form{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;
+  display:grid;gap:10px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+label{font-size:.85rem;color:var(--muted);display:grid;gap:4px}
+input,select,button{font:inherit;color:inherit}
+input[type=text],input[type=date],select{
+  width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
+button{cursor:pointer;border-radius:8px;border:1px solid var(--line);background:transparent;padding:8px 12px}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600;padding:11px}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;margin:22px 0 10px}
+.tabs{display:flex;gap:6px}
+.tabs button[aria-pressed=true]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.bar select{width:auto}
+.count{color:var(--muted);font-size:.9rem;margin:0 0 10px}
+ul{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+li{background:var(--card);border:1px solid var(--line);border-left-width:6px;border-radius:10px;
+  padding:12px;display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:start}
+li.high{border-left-color:var(--high)} li.medium{border-left-color:var(--medium)} li.low{border-left-color:var(--low)}
+li input[type=checkbox]{width:22px;height:22px;margin-top:2px;accent-color:var(--accent)}
+.title{font-weight:600;overflow-wrap:anywhere}
+li.done .title{text-decoration:line-through;color:var(--muted)}
+.meta{font-size:.85rem;color:var(--muted)}
+.meta .over{color:var(--over);font-weight:600}
+.acts{display:flex;gap:6px}
+.acts button{padding:6px 10px;font-size:.85rem}
+.empty{text-align:center;color:var(--muted);padding:28px 8px;border:1px dashed var(--line);border-radius:10px}
+.err{color:var(--over);font-size:.85rem;min-height:1.2em;margin:0}
+@media (prefers-reduced-motion:no-preference){li{transition:opacity .2s}}
+</style>
+</head>
+<body>
+<main>
+  <h1>Task Manager</h1>
+  <p class="sub">Add tasks, set a priority and due date, and tick them off. Saved in your browser.</p>
+
+  <form id="form" novalidate>
+    <label>Task title
+      <input type="text" id="title" maxlength="100" placeholder="e.g. Finish API documentation" autocomplete="off">
+    </label>
+    <div class="row">
+      <label>Priority
+        <select id="priority">
+          <option value="low">Low</option>
+          <option value="medium" selected>Medium</option>
+          <option value="high">High</option>
+        </select>
+      </label>
+      <label>Due date
+        <input type="date" id="due">
+      </label>
+    </div>
+    <p class="err" id="err" role="alert"></p>
+    <button class="primary" type="submit">Add task</button>
+  </form>
+
+  <div class="bar">
+    <div class="tabs" role="group" aria-label="Filter by status">
+      <button type="button" data-f="all" aria-pressed="true">All</button>
+      <button type="button" data-f="active" aria-pressed="false">Active</button>
+      <button type="button" data-f="done" aria-pressed="false">Done</button>
+    </div>
+    <select id="pfilter" aria-label="Filter by priority">
+      <option value="all">Any priority</option>
+      <option value="high">High</option>
+      <option value="medium">Medium</option>
+      <option value="low">Low</option>
+    </select>
+  </div>
+  <p class="count" id="count"></p>
+  <ul id="list"></ul>
+</main>
+
+<script>
+(function () {
+  var KEY = "task-manager.tasks";
+  var tasks = load();
+  var statusFilter = "all";
+  var priorityFilter = "all";
+
+  var form = document.getElementById("form");
+  var titleEl = document.getElementById("title");
+  var priorityEl = document.getElementById("priority");
+  var dueEl = document.getElementById("due");
+  var errEl = document.getElementById("err");
+  var listEl = document.getElementById("list");
+  var countEl = document.getElementById("count");
+
+  function load() {
+    try { return JSON.parse(localStorage.getItem(KEY)) || []; }
+    catch (e) { return []; }
+  }
+  function save() {
+    try { localStorage.setItem(KEY, JSON.stringify(tasks)); } catch (e) {}
+  }
+  function today() {
+    var d = new Date();
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  }
+  function esc(s) {
+    return s.replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  form.addEventListener("submit", function (e) {
+    e.preventDefault();
+    var title = titleEl.value.trim();
+    if (!title) { errEl.textContent = "Enter a task title to add it."; titleEl.focus(); return; }
+    errEl.textContent = "";
+    tasks.unshift({ id: Date.now(), title: title, priority: priorityEl.value, due: dueEl.value, done: false });
+    save();
+    form.reset();
+    priorityEl.value = "medium";
+    render();
+  });
+
+  document.querySelectorAll("[data-f]").forEach(function (b) {
+    b.addEventListener("click", function () {
+      statusFilter = b.dataset.f;
+      document.querySelectorAll("[data-f]").forEach(function (x) {
+        x.setAttribute("aria-pressed", x === b ? "true" : "false");
+      });
+      render();
+    });
+  });
+  document.getElementById("pfilter").addEventListener("change", function (e) {
+    priorityFilter = e.target.value;
+    render();
+  });
+
+  listEl.addEventListener("click", function (e) {
+    var li = e.target.closest("li");
+    if (!li) return;
+    var id = Number(li.dataset.id);
+    var act = e.target.dataset.act;
+    if (act === "delete") {
+      tasks = tasks.filter(function (t) { return t.id !== id; });
+    } else if (act === "edit") {
+      var t = tasks.find(function (x) { return x.id === id; });
+      var next = prompt("Edit task title", t.title);
+      if (next !== null && next.trim()) t.title = next.trim().slice(0, 100);
+    } else {
+      return;
+    }
+    save();
+    render();
+  });
+  listEl.addEventListener("change", function (e) {
+    if (e.target.type !== "checkbox") return;
+    var id = Number(e.target.closest("li").dataset.id);
+    var t = tasks.find(function (x) { return x.id === id; });
+    t.done = e.target.checked;
+    save();
+    render();
+  });
+
+  function render() {
+    var t0 = today();
+    var shown = tasks.filter(function (t) {
+      if (statusFilter === "active" && t.done) return false;
+      if (statusFilter === "done" && !t.done) return false;
+      if (priorityFilter !== "all" && t.priority !== priorityFilter) return false;
+      return true;
+    });
+    var left = tasks.filter(function (t) { return !t.done; }).length;
+    countEl.textContent = tasks.length
+      ? left + " of " + tasks.length + " tasks left"
+      : "";
+
+    if (!shown.length) {
+      listEl.innerHTML = '<li class="empty" style="display:block;border-left-width:1px">' +
+        (tasks.length ? "No tasks match these filters." : "No tasks yet. Add your first task above.") + "</li>";
+      return;
+    }
+    listEl.innerHTML = shown.map(function (t) {
+      var overdue = t.due && !t.done && t.due < t0;
+      var due = t.due ? (overdue ? '<span class="over">Overdue: ' + t.due + "</span>" : "Due " + t.due) : "No due date";
+      return '<li class="' + t.priority + (t.done ? " done" : "") + '" data-id="' + t.id + '">' +
+        '<input type="checkbox" aria-label="Mark done"' + (t.done ? " checked" : "") + ">" +
+        '<div><div class="title">' + esc(t.title) + "</div>" +
+        '<div class="meta">' + t.priority.charAt(0).toUpperCase() + t.priority.slice(1) + " priority \u2022 " + due + "</div></div>" +
+        '<div class="acts"><button type="button" data-act="edit">Edit</button>' +
+        '<button type="button" data-act="delete">Delete</button></div></li>';
+    }).join("");
+  }
+
+  render();
+})();
+</script>
+</body>
+</html>
